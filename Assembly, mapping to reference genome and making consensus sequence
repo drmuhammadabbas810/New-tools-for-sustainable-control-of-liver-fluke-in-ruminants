@@ -1,0 +1,128 @@
+The following work was done in the bash linex system HPC cluster the University of Surrey.
+1.	For extracting from .tar file 
+tar -xvf /parallel_scratch/ma04426/F\ hepatica/X204SC23063558-Z01-F001.tar "*.gz"
+the above command result in zip files of sequences (.fq.gz)
+2.	FastQ Quality Control with rfastp in R version 4.3.0
+Download rFASTp from the link below and install it on R version 4.3.0
+https://www.bioconductor.org/packages/release/bioc/html/Rfastp.html
+More details about rFASTp are on this link
+http://127.0.0.1:16763/library/Rfastp/doc/Rfastp.html 
+The following scripts were generated for sample MR1 1/3_no and the same command sand scripts were used for another sample VPC1 1/3 after file name and file path modification. 
+FastQ Quality Control with rfastp (in programme R) Sample MR1 1/3_no (sheep)
+1.	A normal QC run for paired-end fastq files.
+# Define the output directory path
+outputDir <- "D:/output_files/"
+# Create the output directory if it doesn't exist
+if (!file.exists(outputDir)) {
+  dir.create(outputDir)
+}
+# Create a temporary filename prefix
+outputPrefix <- tempfile(tmpdir = outputDir)
+# Run rfastp with the defined variables
+pe_json_report <- rfastp(read1 = pe_read1,
+                         read2 = pe_read2,
+                         outputFastq = paste0(outputPrefix, "_pe"))
+The above command generated FastQ Quality Control and filter sequences with rfastp report.
+2.	Merge paired-end fastq files after QC. Sample MR1 1/3 no (sheep) 
+Here is the Rscript
+# Define the output directory path
+outputDir <- "D:/output_files/"
+# Create a temporary filename prefix for the unpaired reads
+unpairedPrefix <- tempfile(tmpdir = outputDir)
+# Create a temporary filename prefix for the merged reads
+mergePrefix <- tempfile(tmpdir = outputDir)
+# Run rfastp with the defined variables for merging and unpaired reads
+pe_merge_json_report <- rfastp(read1 = pe_read1,
+                               read2 = pe_read2,
+                               merge = TRUE,
+                               outputFastq = paste0(unpairedPrefix, '_unpaired'),
+                               mergeOut = paste0(mergePrefix, "_merged.fastq.gz"))
+The above script generated a report after merging read 1 and read 2
+Then software Bowtie 2 was used to map with reference genome assembly in bash
+Full genome .fna file was downloaded from NCBI Submitted GenBank assembly
+GCA_002763495.2 WGS project JXXN02
+Owner name: The Genome Institute, Geo loc name USA: Oregon, Host: sheep
+To use a .fna file as the reference genome in Bowtie 2, We first needed to build the Bowtie 2 index. We can do this using the command “bowtie2-build”
+In our case it was as below the bold part is the file name of the reference sequence 
+# Change directory to the location of the reference genome file
+cd /users/ma04426/WGS\ bowtie2/
+# Build the Bowtie 2 index
+bowtie2-build GCA_002763495.2_F_hepatica_1.0.allpaths.pg_genomic.fna genome_index
+The next step is mapping merge paired-end fastq files after QC with the reference sequence 
+# Align the reads to the reference genome using Bowtie 2
+bowtie2 -x genome_index \
+        -U MCR1_1_3_no_merged.fastq.gz \
+        -S output.sam \
+        --threads 4
+•	The above command aligned the reads from our merged .fastq.gz" to the reference genome using the Bowtie 2 index "genome_index". The alignment output was saved in the "output.sam" file, and the alignment was performed using 4 threads.
+•	Please make sure to run these commands in the terminal or command prompt from the correct directory (where the reference genome and merged FASTQ file are located). After running these commands, we should have the alignment results in the "output.sam" file.
+The results of the above command were displayed in the bash
+Next step
+Mapping report was generated from the .SAM file "MR1 1 3.sam," to extract the necessary information using “Rsamtools” in R version "4.3
+Here is the script 
+# Load the Rsamtools library
+library(Rsamtools)
+# Replace 'D:/MR1 1 3 sample wgs work/output files from Bowtie2/MR1 1 3.sam' with the path to your SAM file
+sam_file <- 'D:/MR1 1 3 sample wgs work/output files from Bowtie2/MR1 1 3.sam'
+# Read the SAM file using readLines
+sam_lines <- readLines(sam_file)
+# Count the total number of reads in the SAM file
+total_reads <- length(sam_lines)
+# Count the number of mapped reads (excluding headers and unmapped reads)
+mapped_reads <- sum(!grepl("^@|\\t4\\|\\t8\\|\\t12", sam_lines))
+# Calculate the mapping percentage
+mapping_percentage <- (mapped_reads / total_reads) * 100
+# Print the mapping report
+cat("Mapping Report:\n")
+cat("Total Reads:", total_reads, "\n")
+cat("Mapped Reads:", mapped_reads, "\n")
+cat("Mapping Percentage:", sprintf("%.2f%%", mapping_percentage), "\n")
+The above script produced a mapping percentage 
+Command line for converting .sam file to .bam file in HPC cluster 
+samtools view -bS "/users/ma04426/WGS bowtie2/MR1 13_UK.sam" > "/users/ma04426/WGS bowtie2/MR1 13_UK.bam"
+Explanation:
+samtools view: This command converts SAM/BAM/CRAM files between formats.
+-b: Specifies the output format as BAM.
+-S: Tells samtools that the input file is in SAM format.
+"/users/ma04426/WGS bowtie2/MR1 13_UK.sam": This is the path to MR1 13_UK.sam file. The file name contains spaces, so it is enclosed in double quotes to avoid issues in the command line.
+> "/users/ma04426/WGS bowtie2/MR1 13_UK.bam": Specifies the output path for the generated BAM file.
+After running this command, we have the MR1 13_UK.bam file in the same directory (/users/ma04426/WGS bowtie2/).
+To make a consensus sequence from a single sequence with reference genome
+First, generate a pileup file from .bam file:
+1. First, Sort the BAM file by using the following command 
+samtools sort /users/ma04426/WGS\ bowtie2/MR1\ 13_UK.bam -o /users/ma04426/WGS\ bowtie2/MR1\ 13_UK.sorted.bam
+2. Index the sorted BAM file 
+samtools index /users/ma04426/WGS\ bowtie2/MR1\ 13_UK.sorted.bam
+The samtools index command creates an index file for the sorted BAM file, which allows for quick access during analysis.
+3. Run samtools mpileup with the sorted and indexed BAM file:
+samtools mpileup -f /users/ma04426/WGS\ bowtie2/GCA_900302435.1_Fasciola_10x_pilon_genomic.fna /users/ma04426/WGS\ bowtie2/MR1_13_UK_sorted.bam > pileup.bcf
+After sorting and indexing the BAM file, the samtools mpileup command should run, and we got the pileup file named pileup.txt in the /users/ma04426/WGS bowtie2/ directory.
+Calling variants from a pileup file
+Using bcftools mpileup. Here's the command:
+bcftools mpileup -Ov -f /users/ma04426/WGS\ bowtie2/GCA_900302435.1_Fasciola_10x_pilon_genomic.fna /users/ma04426/WGS\ bowtie2/MR1\ 13_UK.sorted.bam > variants.vcf
+bcftools mpileup: This command is part of the bcftools software package and is used for variant calling from a pileup file.
+-Ov: Specifies the output format as VCF.
+-f /users/ma04426/WGS\ bowtie2/GCA_900302435.1_Fasciola_10x_pilon_genomic.fna: The path to our reference genome FASTA file.
+/users/ma04426/WGS\ bowtie2/MR1\ 13_UK.sorted.bam: The path to our sorted and indexed BAM file.
+> variants.vcf: Redirects the output to a VCF file named variants.vcf.
+4. Generate consensus sequence:
+Call variants from the pileup, generate a VCF file, and then create the consensus sequence in bcftools. The above-stated command and this command are both working. 
+bcftools call -c -v -o variants.vcf.gz pileup.bcf
+bcftools consensus -f /users/ma04426/WGS\ bowtie2/GCA_900302435.1_Fasciola_10x_pilon_genomic.fna variants.vcf.gz > consensus_sequence.fa
+Bam file coverage analysis
+The coverage file is generated with the following command  in bash 
+samtools depth input_sorted.bam > coverage.txt
+Calculate the average, minimum, and maximum coverage from the coverage.txt with the following command in bash
+# Read the coverage.txt file and calculate coverage statistics
+awk 'BEGIN { sum = 0; min = 1000000000; max = 0; count = 0; }
+{ sum += $3; count++; if ($3 < min) min = $3; if ($3 > max) max = $3; }
+END { avg = sum / count; print "Average Coverage:", avg; print "Minimum Coverage:", min; print "Maximum Coverage:", max; }' coverage.txt
+To generate a summary of variant types and their counts in the VCF file, the bcftools stats command is as below:
+bcftools stats /path/to/variants.vcf.gz > variant_stats.txt
+This requires further work to sort out unique variants; therefore, data is not shown in results. 
+5. Checking quality in IGV
+The following files are required to see in IGV   
+Alignment File (BAM file) of Sequence Reads:
+The alignment file (BAM file) of the sequence reads against the reference genome can be examined. It allows us to compare the BAM file coverage with the original reference sequence and identify discrepancies or potential alignment issues.
+The BAM file MR1 13_UK.bam was generated by mapping the sequence reads to the reference genome using a tool like Bowtie2 or BWA. It was sorted and indexed using samtools sort and samtools index.
+These files were opened in IGV and loaded with the reference genome sequence, the BAM file of sequence reads for comparison, and the VCF variants file. We can then navigate the genome and inspect the coverage and quality of the sorted BAM file.
